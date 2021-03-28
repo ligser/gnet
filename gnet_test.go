@@ -584,8 +584,29 @@ func TestDefaultGnetServer(t *testing.T) {
 	svr.Tick()
 }
 
+type testBadAddrServer struct {
+	*EventServer
+}
+
+func (t *testBadAddrServer) OnInitComplete(srv Server) (action Action) {
+	return Shutdown
+}
+
+func TestBadAddresses(t *testing.T) {
+	events := new(testBadAddrServer)
+	if err := Serve(events, "tulip://howdy"); err == nil {
+		t.Fatalf("expected error")
+	}
+	if err := Serve(events, "howdy"); err == nil {
+		t.Fatalf("expected error")
+	}
+	if err := Serve(events, "tcp://"); err != nil {
+		t.Fatalf("expected nil, got '%v'", err)
+	}
+}
+
 func TestTick(t *testing.T) {
-	testTick("tcp4", ":9991", t)
+	testTick("tcp", ":9991", t)
 }
 
 type testTickServer struct {
@@ -615,7 +636,7 @@ func testTick(network, addr string, t *testing.T) {
 }
 
 func TestWakeConn(t *testing.T) {
-	testWakeConn("tcp", ":9000")
+	testWakeConn("tcp", ":9991")
 }
 
 type testWakeConnServer struct {
@@ -727,29 +748,8 @@ func testShutdown(network, addr string) {
 	}
 }
 
-type testBadAddrServer struct {
-	*EventServer
-}
-
-func (t *testBadAddrServer) OnInitComplete(srv Server) (action Action) {
-	return Shutdown
-}
-
-func TestBadAddresses(t *testing.T) {
-	events := new(testBadAddrServer)
-	if err := Serve(events, "tulip://howdy"); err == nil {
-		t.Fatalf("expected error")
-	}
-	if err := Serve(events, "howdy"); err == nil {
-		t.Fatalf("expected error")
-	}
-	if err := Serve(events, "tcp://"); err != nil {
-		t.Fatalf("expected nil, got '%v'", err)
-	}
-}
-
 func TestCloseActionError(t *testing.T) {
-	testCloseActionError("tcp", ":9991")
+	testCloseActionError("tcp", ":9992")
 }
 
 type testCloseActionErrorServer struct {
@@ -797,7 +797,7 @@ func testCloseActionError(network, addr string) {
 }
 
 func TestShutdownActionError(t *testing.T) {
-	testShutdownActionError("tcp", ":9991")
+	testShutdownActionError("tcp", ":9993")
 }
 
 type testShutdownActionErrorServer struct {
@@ -841,7 +841,7 @@ func testShutdownActionError(network, addr string) {
 }
 
 func TestCloseActionOnOpen(t *testing.T) {
-	testCloseActionOnOpen("tcp", ":9991")
+	testCloseActionOnOpen("tcp", ":9994")
 }
 
 type testCloseActionOnOpenServer struct {
@@ -881,7 +881,7 @@ func testCloseActionOnOpen(network, addr string) {
 }
 
 func TestShutdownActionOnOpen(t *testing.T) {
-	testShutdownActionOnOpen("tcp", ":9991")
+	testShutdownActionOnOpen("tcp", ":9995")
 }
 
 type testShutdownActionOnOpenServer struct {
@@ -966,7 +966,7 @@ func testUDPShutdown(network, addr string) {
 }
 
 func TestCloseConnection(t *testing.T) {
-	testCloseConnection("tcp", ":9992")
+	testCloseConnection("tcp", ":9996")
 }
 
 type testCloseConnectionServer struct {
@@ -1030,7 +1030,7 @@ func TestServerOptionsCheck(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	testStop("tcp", ":9993")
+	testStop("tcp", ":9997")
 }
 
 type testStopServer struct {
