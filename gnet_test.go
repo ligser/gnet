@@ -35,10 +35,11 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/panjf2000/gnet/errors"
 	"github.com/panjf2000/gnet/pool/bytebuffer"
 	"github.com/panjf2000/gnet/pool/goroutine"
-	"go.uber.org/zap"
 )
 
 func TestCodecServe(t *testing.T) {
@@ -1164,4 +1165,151 @@ func TestClosedWakeUp(t *testing.T) {
 	}
 
 	must(Serve(events, events.protoAddr))
+}
+
+type testClosedReadsServer struct {
+	*EventServer
+	network, addr, protoAddr string
+
+	finished chan struct{}
+
+	react chan string
+	step  chan struct{}
+	close chan struct{}
+}
+
+func (tes *testClosedReadsServer) OnInitComplete(_ Server) (action Action) {
+	c, err := net.Dial(tes.network, tes.addr)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := c.Write([]byte("hello")); err != nil {
+		panic(err)
+	}
+
+	c1, err := net.Dial(tes.network, tes.addr)
+	if err != nil {
+		panic(err)
+	}
+
+	opposite := map[string]string{
+		c.LocalAddr().String():  c1.LocalAddr().String(),
+		c1.LocalAddr().String(): c.LocalAddr().String(),
+	}
+
+	conns := map[string]net.Conn{
+		c.LocalAddr().String():  c,
+		c1.LocalAddr().String(): c1,
+	}
+
+	go func() {
+		reacted := <-tes.react
+		// first step. Conn reacted. We should write here to both of them.
+
+		fmt.Printf("Conn[%s] reacted lets fill them again\n", reacted)
+
+		for _, conn := range conns {
+			_, err := conn.Write([]byte("something else"))
+			if err != nil {
+				panic("cannot write")
+			}
+		}
+
+		tes.step <- struct{}{}
+
+		// Then when next iteration of a poller executed we should wait for react
+		// and close opposite conn to have broken read that will close conn.
+		reacted = <-tes.react
+
+		another := opposite[reacted]
+		fmt.Printf("Conn[%s] reacted and we should close another conn[%s]\n", reacted, another)
+
+		// close before we release poller
+		must(conns[another].Close())
+
+		tes.step <- struct{}{}
+
+		// Let second conn to write.
+		<-tes.react
+		tes.step <- struct{}{}
+
+		// wait until server mark that conn as closed.
+		<-tes.close
+
+		fmt.Printf("conn[%s] closed. Try to reuse FD.\n", another)
+		time.Sleep(time.Millisecond * 300)
+
+		c, err := net.Dial(tes.network, tes.addr)
+		if err != nil {
+			panic(err)
+		}
+		if _, err := c.Write([]byte("hello")); err != nil {
+			panic(err)
+		}
+
+		// prevent close from finish until we prepare third conn
+		tes.step <- struct{}{}
+
+		close(tes.finished)
+
+		fmt.Println("stop server...", Stop(context.TODO(), tes.protoAddr))
+	}()
+
+	return None
+}
+
+func (tes *testClosedReadsServer) React(bts []byte, conn Conn) ([]byte, Action) {
+	if conn.RemoteAddr() == nil {
+		panic("react on closed conn")
+	}
+
+	if len(bts) == 0 {
+		return nil, None
+	}
+
+	select {
+	case <-tes.finished:
+		return nil, None
+	default:
+	}
+
+	tes.react <- conn.RemoteAddr().String()
+	<-tes.step
+
+	return []byte("answer that overgrowth send buffer"), None
+}
+
+func (tes *testClosedReadsServer) OnClosed(c Conn, err error) (action Action) {
+	select {
+	case <-tes.finished:
+		return None
+	default:
+	}
+
+	tes.close <- struct{}{}
+	<-tes.step
+
+	return None
+}
+
+// Test should demonstrate that FD reuse can cause reads on closed conns and
+// part of them can be broken.
+// To see steps — go to OnInitComplete method on the testClosedReadsServer
+// struct.
+func TestClosedReads(t *testing.T) {
+	events := &testClosedReadsServer{
+		EventServer: &EventServer{}, network: "tcp", addr: ":8889", protoAddr: "tcp://:8889",
+		react: make(chan string),
+		step:  make(chan struct{}),
+		close: make(chan struct{}),
+
+		finished: make(chan struct{}),
+	}
+
+	must(Serve(
+		events,
+		events.protoAddr,
+		WithReusePort(true),
+		WithSocketSendBuffer(10),
+	))
 }
