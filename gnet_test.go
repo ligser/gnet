@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -1249,21 +1250,11 @@ func (tes *testClosedWakeUpServer) OnClosed(c Conn, err error) (action Action) {
 	return
 }
 
-// Test should not panic when we wake-up server_closed conn.
-func TestClosedWakeUp(t *testing.T) {
-	events := &testClosedWakeUpServer{
-		EventServer: &EventServer{}, network: "tcp", addr: ":8888", protoAddr: "tcp://:8888",
-		clientClosed: make(chan struct{}),
-		serverClosed: make(chan struct{}),
-		readen:       make(chan struct{}),
-	}
-
-	must(Serve(events, events.protoAddr))
-}
-
 type testExecutorServer struct {
 	*EventServer
 	network, addr, protoAddr string
+
+	tester *testing.T
 
 	executed chan struct{}
 	stopped  chan struct{}
@@ -1305,11 +1296,13 @@ func (tes *testExecutorServer) OnInitComplete(_ Server) (action Action) {
 }
 
 func (tes *testExecutorServer) OnOpened(conn Conn) ([]byte, Action) {
-	must(conn.AsyncExecute(func(c Conn) ([]byte, Action) {
+	err := conn.AsyncExecute(func(c Conn) ([]byte, Action) {
 		close(tes.executed)
 
 		return []byte("hello"), Close
-	}))
+	})
+
+	require.NoError(tes.tester, err)
 
 	return nil, None
 }
@@ -1317,19 +1310,24 @@ func (tes *testExecutorServer) OnOpened(conn Conn) ([]byte, Action) {
 func (tes *testExecutorServer) OnClosed(c Conn, _ error) (action Action) {
 	close(tes.stopped)
 
-	must(c.AsyncExecute(func(c Conn) ([]byte, Action) {
+	err := c.AsyncExecute(func(c Conn) ([]byte, Action) {
 		panic("should not be executed")
-	}))
+	})
+
+	require.NoError(tes.tester, err)
 
 	return None
 }
 
 func TestAsyncExecute(t *testing.T) {
 	events := &testExecutorServer{
-		EventServer: &EventServer{}, network: "tcp", addr: ":8888", protoAddr: "tcp://:8888",
+		EventServer: &EventServer{}, network: "tcp", addr: ":8887", protoAddr: "tcp://:8887",
 		executed: make(chan struct{}),
 		stopped:  make(chan struct{}),
+		tester:   t,
 	}
 
-	must(Serve(events, events.protoAddr))
+	err := Serve(events, events.protoAddr)
+
+	require.NoError(t, err)
 }

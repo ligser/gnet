@@ -266,7 +266,8 @@ func (c *stdConn) Wake() error {
 }
 
 func (c *stdConn) AsyncExecute(cb func(conn Conn) ([]byte, Action)) error {
-	c.loop.ch <- func() error {
+	task = signalTaskPool.Get().(*signalTask)
+	task.run = func(c *stdConn) error {
 		if c.conn == nil {
 			return nil
 		}
@@ -286,7 +287,8 @@ func (c *stdConn) AsyncExecute(cb func(conn Conn) ([]byte, Action)) error {
 
 		return c.loop.handleAction(c, action)
 	}
-
+	task.c = c
+	c.loop.ch <- task
 	return nil
 }
 

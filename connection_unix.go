@@ -326,7 +326,7 @@ func (c *conn) Wake() error {
 }
 
 func (c *conn) AsyncExecute(cb func(Conn) ([]byte, Action)) error {
-	return c.loop.poller.Trigger(func() error {
+	return c.loop.poller.Trigger(func(_ interface{}) error {
 		if !c.opened {
 			return nil
 		}
@@ -339,7 +339,7 @@ func (c *conn) AsyncExecute(cb func(Conn) ([]byte, Action)) error {
 		}
 
 		return c.loop.handleAction(c, action)
-	})
+	}, nil)
 }
 
 func (c *conn) Close() error {
