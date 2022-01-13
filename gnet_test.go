@@ -36,8 +36,8 @@ import (
 
 	"github.com/panjf2000/gnet/pkg/errors"
 	"github.com/panjf2000/gnet/pkg/logging"
-	"github.com/panjf2000/gnet/pkg/pool/bytebuffer"
-	"github.com/panjf2000/gnet/pkg/pool/goroutine"
+	bbPool "github.com/panjf2000/gnet/pkg/pool/bytebuffer"
+	goPool "github.com/panjf2000/gnet/pkg/pool/goroutine"
 )
 
 var (
@@ -174,7 +174,7 @@ type testCodecServer struct {
 	connected    int32
 	disconnected int32
 	codec        ICodec
-	workerPool   *goroutine.Pool
+	workerPool   *goPool.Pool
 }
 
 func (s *testCodecServer) OnOpened(c Conn) (out []byte, action Action) {
@@ -259,7 +259,7 @@ func testCodecServe(
 	}
 	ts := &testCodecServer{
 		tester: t, network: network, addr: addr, multicore: multicore, async: async, nclients: nclients,
-		codec: codec, workerPool: goroutine.Default(),
+		codec: codec, workerPool: goPool.Default(),
 	}
 	err = Serve(
 		ts,
@@ -522,7 +522,7 @@ type testServer struct {
 	connected    int32
 	clientActive int32
 	disconnected int32
-	workerPool   *goroutine.Pool
+	workerPool   *goPool.Pool
 }
 
 func (s *testServer) OnInitComplete(svr Server) (action Action) {
@@ -559,7 +559,7 @@ func (s *testServer) OnClosed(c Conn, err error) (action Action) {
 
 func (s *testServer) React(packet []byte, c Conn) (out []byte, action Action) {
 	if s.async {
-		buf := bytebuffer.Get()
+		buf := bbPool.Get()
 		_, _ = buf.Write(packet)
 
 		if s.network == "tcp" || s.network == "unix" {
@@ -620,7 +620,7 @@ func testServe(t *testing.T, network, addr string, reuseport, reuseaddr, multico
 		async:      async,
 		writev:     writev,
 		nclients:   nclients,
-		workerPool: goroutine.Default(),
+		workerPool: goPool.Default(),
 	}
 	err := Serve(ts,
 		network+"://"+addr,
